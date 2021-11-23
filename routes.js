@@ -15,9 +15,16 @@ connection.connect();
 
 async function movies(req, res) {
   // a GET request to /movies
+  const { value, genres } = req.query;
+
   const page = req.params.page || 1;
   const limit = 12;
   const offset = limit * (page - 1);
+  let genreList = [];
+  if (genres) {
+    genreList = genres?.split(",");
+  }
+
   const baseQuery = `
     WITH imdb AS (
       SELECT movie_id, rating_score AS imdb_score
@@ -36,7 +43,20 @@ async function movies(req, res) {
       GROUP BY movie_id
     )
     SELECT m.movie_id, primary_title, start_year, runtime_minutes, poster_path, overview, imdb_score, tmdb_score, rotten_tomatoes_score, 10 * imdb_score + 10 * tmdb_score + rotten_tomatoes_score - (2022 - m.start_year) / 3 AS total_score, COUNT(*) OVER() AS full_count
-    FROM Movies m JOIN imdb JOIN tmdb JOIN rotten_tomatoes ON m.movie_id = imdb.movie_id AND m.movie_id = tmdb.movie_id AND m.movie_id = rotten_tomatoes.movie_id
+    FROM Movies m
+    LEFT JOIN imdb ON m.movie_id = imdb.movie_id
+    LEFT JOIN tmdb ON m.movie_id = tmdb.movie_id
+    LEFT JOIN rotten_tomatoes ON m.movie_id = rotten_tomatoes.movie_id
+    JOIN HasGenre hg ON m.movie_id = hg.movie_id
+    ${
+      genreList.length > 0
+        ? `AND (${genreList
+            .map((genre_id) => `hg.genre_id = '${genre_id}'`)
+            .join(" OR ")}) `
+        : ""
+    } 
+    ${value ? `WHERE m.primary_title LIKE '%${value}%'` : ""}
+    GROUP BY m.movie_id
     ORDER BY total_score DESC
     LIMIT ${limit}
     OFFSET ${offset};
@@ -174,6 +194,22 @@ async function movie_genres(req, res) {
   }
 }
 
+async function all_genres(req, res) {
+  const responseHandler = (error, genres) => {
+    if (error) {
+      console.log(error);
+      res.json({ error });
+    } else if (genres) {
+      res.json({ genres });
+    }
+  };
+
+  connection.query(
+    "SELECT * FROM Genres ORDER BY genre_name ASC;",
+    responseHandler
+  );
+}
+
 async function person(req, res) {
   const person_id = req.params.person_id;
 
@@ -208,5 +244,6 @@ module.exports = {
   movie_cast,
   movie_director_and_writer,
   movie_genres,
+  all_genres,
   person,
 };

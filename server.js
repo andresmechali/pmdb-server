@@ -31,6 +31,9 @@ app.get(
 // Get genres for a given movie
 app.get("/movie-genres/:movie_id", routes.movie_genres);
 
+// Get all genres
+app.get("/genres", routes.all_genres);
+
 // Get basic information about a person
 app.get("/person/:person_id", routes.person);
 
