@@ -23,6 +23,10 @@ app.get("/movie_ratings/:page", routes.movie_ratings)
 // Get all genres
 app.get("/genres", routes.all_genres);
 
+// Get info about person
+app.get("/person/:person_id", routes.person);
+
+
 app.listen(config.server_port, () => {
   console.log(
     `Server running at http://${config.server_host}:${config.server_port}/`

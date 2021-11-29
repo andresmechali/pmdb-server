@@ -33,7 +33,7 @@ async function home(req, res) {
     WHERE num_votes > 0 AND agency_id = 3
     GROUP BY movie_id
   )
-  SELECT primary_title, start_year, posterPath AS poster_path, imdb_score, tmdb_score, rotten_tomatoes_score
+  SELECT Movies.movie_id, primary_title, start_year, posterPath AS poster_path, imdb_score, tmdb_score, rotten_tomatoes_score
   FROM Movies LEFT OUTER JOIN PMDB.MoviesPosterPath MPP on Movies.movie_id = MPP.tconst
             LEFT OUTER JOIN imdb on imdb.movie_id = Movies.movie_id
             LEFT OUTER JOIN tmdb on tmdb.movie_id = Movies.movie_id
@@ -128,7 +128,6 @@ async function movie_ratings(req, res) {
   console.log(baseQuery)
 }
 
-
 async function all_genres(req, res) {
   const responseHandler = (error, genres) => {
     if (error) {
@@ -145,9 +144,71 @@ async function all_genres(req, res) {
   );
 }
 
+async function person(req, res) {
+
+  //example URL
+  //http://127.0.0.1:8080/person/nm0000158
+  //Where we look for the information of the actor with ID=nm0000158 (which is Tom Hanks)
+
+  const person_id = req.params.person_id;
+
+  const baseQuery = `
+  WITH highest_grossing_IsCast AS (
+    SELECT DISTINCT P.person_id, M.movie_id AS highest_grossing_IsCast_movie_id, primary_title AS highest_grossing_IsCast_title, lifetime_grossing AS highest_grossing_IsCast_grossing
+    FROM Persons P JOIN IsCast IC on P.person_id = IC.person_id
+                JOIN Movies M on IC.movie_id = M.movie_id
+    WHERE P.person_id = '${person_id}'
+    ORDER BY lifetime_grossing DESC#
+    LIMIT 1
+  ), highest_grossing_IsWriter AS (
+      SELECT DISTINCT P.person_id, M.movie_id AS highest_grossing_IsWriter_movie_id, primary_title AS highest_grossing_IsWriter_title, lifetime_grossing AS highest_grossing_IsWriter_grossing
+      FROM Persons P JOIN IsWriter IW on P.person_id = IW.person_id
+                  JOIN Movies M on IW.movie_id = M.movie_id
+      WHERE P.person_id = '${person_id}'
+      ORDER BY lifetime_grossing DESC
+      LIMIT 1
+  ), highest_grossing_IsDirector AS (
+      SELECT DISTINCT P.person_id, M.movie_id AS highest_grossing_IsDirector_movie_id, primary_title AS highest_grossing_IsDirector_title, lifetime_grossing AS highest_grossing_IsDirector_grossing
+      FROM Persons P JOIN IsDirector ID on P.person_id = ID.person_id
+                  JOIN Movies M on ID.movie_id = M.movie_id
+      WHERE P.person_id = '${person_id}'
+      ORDER BY lifetime_grossing DESC
+      LIMIT 1
+  ), person_and_highest_grossign_information AS (
+      SELECT P.person_id, primary_name, birth_year, death_year,
+            highest_grossing_IsCast_movie_id, highest_grossing_IsCast_title, highest_grossing_IsCast_grossing,
+            highest_grossing_IsWriter_movie_id, highest_grossing_IsWriter_title, highest_grossing_IsWriter_grossing,
+            highest_grossing_IsDirector_movie_id, highest_grossing_IsDirector_title, highest_grossing_IsDirector_grossing
+      FROM Persons P JOIN highest_grossing_IsCast IC ON IC.person_id = P.person_id
+                      JOIN highest_grossing_IsDirector ID ON ID.person_id = P.person_id
+                      JOIN highest_grossing_IsWriter IW ON IW.person_id = P.person_id
+  )
+  SELECT P.person_id, primary_name, birth_year, death_year,
+          highest_grossing_IsCast_movie_id, highest_grossing_IsCast_title, highest_grossing_IsCast_grossing,
+          highest_grossing_IsWriter_movie_id, highest_grossing_IsWriter_title, highest_grossing_IsWriter_grossing,
+          highest_grossing_IsDirector_movie_id, highest_grossing_IsDirector_title, highest_grossing_IsDirector_grossing,
+          M2.movie_id AS movie_id_title_known_for, primary_title AS title_known_for
+  FROM person_and_highest_grossign_information P JOIN IsKnownFor IKF ON P.person_id = IKF.person_id
+      JOIN Movies M2 on IKF.movie_id = M2.movie_id
+  `;
+
+  const responseHandler = (error, results) => {
+    if (error) {
+      console.log(error);
+      res.json({ error });
+    } else if (results) {
+      res.json({ results });
+    }
+  };
+
+  connection.query(baseQuery, responseHandler);
+
+  console.log(baseQuery)
+}
 
 module.exports = {
   home,
   movie_ratings,
   all_genres,
+  person
 };
