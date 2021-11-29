@@ -13,29 +13,10 @@ app.use(
   })
 );
 
-// Get movies for a given page
-app.get("/movies/:page", routes.movies);
+// Get actors/directors/writters information
+app.get("/find_actors/:page", routes.find_actors);
 
-// Get basic information about a movie
 app.get("/movie/:movie_id", routes.movie);
-
-// Get cast of a given movie
-app.get("/movie-cast/:movie_id", routes.movie_cast);
-
-// Get director and writer for a given movie
-app.get(
-  "/movie-director-and-writer/:movie_id",
-  routes.movie_director_and_writer
-);
-
-// Get genres for a given movie
-app.get("/movie-genres/:movie_id", routes.movie_genres);
-
-// Get all genres
-app.get("/genres", routes.all_genres);
-
-// Get basic information about a person
-app.get("/person/:person_id", routes.person);
 
 app.listen(config.server_port, () => {
   console.log(
