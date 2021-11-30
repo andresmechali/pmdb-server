@@ -125,7 +125,11 @@ async function find_actors(req, res) {
     LEFT JOIN Movies m
         ON i.movie_id = m.movie_id
   )
-  SELECT p.primary_name, p.birth_year, p.death_year,
+  SELECT 
+     LEFT(p.primary_name,LOCATE(' ',primary_name) - 1) as Firstname,
+     RIGHT(primary_name,length(primary_name) - LOCATE(' ',primary_name) ) as Surname, 
+     p.birth_year, 
+     p.death_year,
      GROUP_CONCAT(DISTINCT i.primary_title)  AS movies_known_for,
      COUNT(c.person_id)  AS movies_acted,
      COUNT(d.person_id) AS movies_directed,
