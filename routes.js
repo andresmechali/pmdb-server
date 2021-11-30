@@ -19,29 +19,39 @@ connection.on("error", (err) => {
 // Christopher
 async function home(req, res) {
   const baseQuery = `
-  WITH imdb AS (
-    SELECT movie_id, rating_score AS imdb_score
-    FROM Ratings r
-    WHERE num_votes > 0 AND agency_id = 1
-    GROUP BY movie_id
-  ), tmdb AS (
-    SELECT movie_id, rating_score AS tmdb_score
-    FROM Ratings r
-    WHERE num_votes > 0 AND agency_id = 2
-    GROUP BY movie_id
-  ), rotten_tomatoes AS (
-    SELECT movie_id, rating_score AS rotten_tomatoes_score
-   
-    FROM Ratings r
-    WHERE num_votes > 0 AND agency_id = 3
-    GROUP BY movie_id
-  )
-  SELECT Movies.movie_id, primary_title, start_year, posterPath AS poster_path, imdb_score, tmdb_score, rotten_tomatoes_score
-  FROM Movies LEFT OUTER JOIN PMDB.MoviesPosterPath MPP on Movies.movie_id = MPP.tconst
-            LEFT OUTER JOIN imdb on imdb.movie_id = Movies.movie_id
-            LEFT OUTER JOIN tmdb on tmdb.movie_id = Movies.movie_id
-            LEFT OUTER JOIN rotten_tomatoes on rotten_tomatoes.movie_id = Movies.movie_id
-  ORDER BY RAND();
+    WITH imdb AS (
+      SELECT movie_id, rating_score AS imdb_score
+      FROM Ratings r
+      WHERE num_votes > 0 AND agency_id = 1
+      GROUP BY movie_id
+    ), tmdb AS (
+      SELECT movie_id, rating_score AS tmdb_score
+      FROM Ratings r
+      WHERE num_votes > 0 AND agency_id = 2
+      GROUP BY movie_id
+    ), rotten_tomatoes AS (
+      SELECT movie_id, rating_score AS rotten_tomatoes_score
+      FROM Ratings r
+      WHERE num_votes > 0 AND agency_id = 3
+      GROUP BY movie_id
+    )
+    /*
+        Possible improvement: Filter movies before joining. We can gain about 0.6 seconds.
+        
+        SELECT RandomMovies.movie_id, primary_title, start_year, posterPath AS poster_path, imdb_score, tmdb_score, rotten_tomatoes_score
+        FROM (SELECT * FROM Movies ORDER BY RAND() LIMIT 100) AS RandomMovies
+            LEFT OUTER JOIN PMDB.MoviesPosterPath MPP ON RandomMovies.movie_id = MPP.tconst
+            LEFT OUTER JOIN imdb on imdb.movie_id = RandomMovies.movie_id
+            LEFT OUTER JOIN tmdb on tmdb.movie_id = RandomMovies.movie_id
+            LEFT OUTER JOIN rotten_tomatoes on rotten_tomatoes.movie_id = RandomMovies.movie_id
+    */
+    SELECT Movies.movie_id, primary_title, start_year, posterPath AS poster_path, imdb_score, tmdb_score, rotten_tomatoes_score
+    FROM Movies LEFT OUTER JOIN PMDB.MoviesPosterPath MPP on Movies.movie_id = MPP.tconst
+      LEFT OUTER JOIN imdb on imdb.movie_id = Movies.movie_id
+      LEFT OUTER JOIN tmdb on tmdb.movie_id = Movies.movie_id
+      LEFT OUTER JOIN rotten_tomatoes on rotten_tomatoes.movie_id = Movies.movie_id
+    ORDER BY RAND()
+    LIMIT 100;
   `;
 
   const responseHandler = (error, results) => {
@@ -305,7 +315,19 @@ async function find_actors(req, res) {
 
 async function movies(req, res) {
   // a GET request to /movies
-  const { value, genres } = req.query;
+  const {
+    value,
+    genres,
+    imdb,
+    tmdb,
+    rotten_tomatoes,
+    min_year,
+    max_year,
+    grossing,
+    actors,
+    director,
+    writer,
+  } = req.query;
 
   const page = req.params.page || 1;
   const limit = 12;
@@ -315,28 +337,45 @@ async function movies(req, res) {
     genreList = genres?.split(",");
   }
 
+  let actorsList = [];
+  if (actors) {
+    actorsList = actors.split(",");
+  }
+
   const baseQuery = `
     WITH imdb AS (
       SELECT movie_id, rating_score AS imdb_score
       FROM Ratings r
-      WHERE num_votes > 100 AND agency_id = 1
+      WHERE num_votes > 10 AND agency_id = 1
+      ${imdb ? `AND rating_score >= ${imdb}` : ""}
       GROUP BY movie_id
     ), tmdb AS (
       SELECT movie_id, rating_score AS tmdb_score
       FROM Ratings r
-      WHERE num_votes > 100 AND agency_id = 2
+      WHERE num_votes > 10 AND agency_id = 2
+      ${tmdb ? `AND rating_score >= ${tmdb}` : ""}
       GROUP BY movie_id
     ), rotten_tomatoes AS (
       SELECT movie_id, rating_score AS rotten_tomatoes_score
       FROM Ratings r
       WHERE num_votes > 10 AND agency_id = 3
+      ${rotten_tomatoes ? `AND rating_score >= ${rotten_tomatoes}` : ""}
       GROUP BY movie_id
     )
-    SELECT m.movie_id, primary_title, start_year, runtime_minutes, poster_path, overview, imdb_score, tmdb_score, rotten_tomatoes_score, 10 * imdb_score + 10 * tmdb_score + rotten_tomatoes_score - (2022 - m.start_year) / 3 AS total_score, COUNT(*) OVER() AS full_count
-    FROM Movies m
-    LEFT JOIN imdb ON m.movie_id = imdb.movie_id
-    LEFT JOIN tmdb ON m.movie_id = tmdb.movie_id
-    LEFT JOIN rotten_tomatoes ON m.movie_id = rotten_tomatoes.movie_id
+    SELECT m.movie_id, primary_title, start_year, runtime_minutes, poster_path, overview, imdb_score, tmdb_score, rotten_tomatoes_score, 10 * imdb_score + 10 * tmdb_score + rotten_tomatoes_score - (2022 - m.start_year) / 3 AS total_score, lifetime_grossing, COUNT(*) OVER() AS full_count
+    FROM (
+        SELECT * FROM Movies
+        WHERE 1
+        ${min_year ? `AND start_year >= ${min_year}` : ""}
+        ${max_year ? `AND start_year <= ${max_year}` : ""}
+        ${grossing ? `AND lifetime_grossing >= ${grossing}` : ""}
+        ${value ? `AND primary_title LIKE '%${value}%'` : ""}
+    ) AS m
+    ${imdb ? "JOIN" : "LEFT JOIN"} imdb ON m.movie_id = imdb.movie_id
+    ${tmdb ? "JOIN" : "LEFT JOIN"} tmdb ON m.movie_id = tmdb.movie_id
+    ${
+      rotten_tomatoes ? "JOIN" : "LEFT JOIN"
+    } rotten_tomatoes ON m.movie_id = rotten_tomatoes.movie_id
     JOIN HasGenre hg ON m.movie_id = hg.movie_id
     ${
       genreList.length > 0
@@ -344,13 +383,23 @@ async function movies(req, res) {
             .map((genre_id) => `hg.genre_id = '${genre_id}'`)
             .join(" OR ")}) `
         : ""
-    } 
-    ${value ? `WHERE m.primary_title LIKE '%${value}%'` : ""}
+    }
+    JOIN IsCast IC ON m.movie_id = IC.movie_id
+    JOIN Persons P ON IC.person_id = P.person_id
+    ${
+      actorsList.length > 0
+        ? `AND (${actorsList
+            .map((name) => `P.primary_name LIKE '%${name}%'`)
+            .join(" OR ")})`
+        : ""
+    }
     GROUP BY m.movie_id
     ORDER BY total_score DESC
     LIMIT ${limit}
     OFFSET ${offset};
   `;
+
+  console.log(baseQuery);
 
   const responseHandler = (error, results) => {
     if (error) {
