@@ -2,8 +2,7 @@ const config = require("./config.json");
 const mysql = require("mysql");
 const e = require("express");
 
-// TODO: fill in your connection details here
-const connection = mysql.createConnection({
+const connection = mysql.createPool({
   host: config.rds_host,
   user: config.rds_user,
   password: config.rds_password,
@@ -11,7 +10,11 @@ const connection = mysql.createConnection({
   database: config.rds_db,
 });
 
-connection.connect();
+// connection.connect();
+
+connection.on("error", (err) => {
+  console.log("error listener:", err);
+});
 
 async function movies(req, res) {
   // a GET request to /movies
