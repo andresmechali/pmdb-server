@@ -16,91 +16,46 @@ connection.connect();
 
 async function Person(req, res) {
 
-  const baseQuery = ` ${ /* Need to add the Award but taking 2s it's exactly like the List of movie known just need the table PersonNomination */'' }
-  create view knownfor as(
-    With Movie(movie_id, movie) as(
-    select movie_id, primary_title
-    from Movies),
-    
-    Person(person_id, firstname, Surname, Born, Death) as(
-        select Distinct p.person_id, LEFT(primary_name,LOCATE(' ',primary_name) - 1) as Firstname,RIGHT(primary_name,length(primary_name) - LOCATE(' ',primary_name) ) as Surname, birth_year, death_year
-        from Persons p),
-    
-    knownfor(person_id,firstname,surname,Born, Death, movie,movie_id) as(
-    select p.person_id,firstname,Surname ,Born, Death,movie,m.movie_id
-    from Person p
-        Join IsKnownFor i on i.person_id= p.person_id
-        join Movie m on i.movie_id = m.movie_id)
-    
-    select * from knownfor);
-    
-    CREATE VIEW FILTERED as (
-    SELECT person_id,firstname,Surname ,Born, Death, GROUP_CONCAT( distinct movie separator " / ") as List_movie_knownfor FROM knownfor GROUP BY firstname,Surname ,Born, Death
-    );
-    select * from FILTERED;
-    
-    create view grossingA as(
-    With Movie(movie_id, movie, grossing) as(
-    select movie_id, primary_title,lifetime_grossing
-    from Movies),
-    
-    Person(person_id, firstname, Surname) as(
-        select Distinct p.person_id, LEFT(primary_name,LOCATE(' ',primary_name) - 1) as Firstname,RIGHT(primary_name,length(primary_name) - LOCATE(' ',primary_name) ) as Surname
-        from Persons p),
-    
-    grossing(person_id,firstname,surname,movieA,movie_id,grossing) as(
-    select Distinct p.person_id,firstname,Surname ,movie,m.movie_id,MAX(grossing)
-    from Person p
-        Join IsCast i on i.person_id= p.person_id
-        join Movie m on i.movie_id = m.movie_id
-    Group BY firstname,Surname)
-    
-    select * from grossing);
-    
-    create view grossingD as(
-    With Movie(movie_id, movie, grossing) as(
-    select movie_id, primary_title,lifetime_grossing
-    from Movies),
-    
-    Person(person_id, firstname, Surname) as(
-        select Distinct p.person_id, LEFT(primary_name,LOCATE(' ',primary_name) - 1) as Firstname,RIGHT(primary_name,length(primary_name) - LOCATE(' ',primary_name) ) as Surname
-        from Persons p),
-    
-    grossing(person_id,firstname,surname,movie,movie_id,grossing) as(
-    select Distinct p.person_id,firstname,Surname ,movie,m.movie_id,MAX(grossing)
-    from Person p
-        Join IsDirector i on i.person_id= p.person_id
-        join Movie m on i.movie_id = m.movie_id
-    Group BY firstname,Surname)
-    
-    select * from grossing);
-    
-    select D.movie, D.grossing
-    from grossingD D;
-    
-    create view grossingW as(
-    With Movie(movie_id, movie, grossing) as(
-    select movie_id, primary_title,lifetime_grossing
-    from Movies),
-    
-    Person(person_id, firstname, Surname) as(
-        select Distinct p.person_id, LEFT(primary_name,LOCATE(' ',primary_name) - 1) as Firstname,RIGHT(primary_name,length(primary_name) - LOCATE(' ',primary_name) ) as Surname
-        from Persons p),
-    
-    grossing(person_id,firstname,surname,movie,movie_id,grossing) as(
-    select Distinct p.person_id,firstname,Surname ,movie,m.movie_id,MAX(grossing)
-    from Person p
-        Join IsWriter i on i.person_id= p.person_id
-        join Movie m on i.movie_id = m.movie_id
-    Group BY firstname,Surname)
-    
-    select * from grossing);
-    
-    select k.firstname,k.Surname ,k.Born, k.Death,k.List_movie_knownfor , A.movieA as Highest_Grossing_Movie_Acted_in, D.movie as Highest_Grossing_Movie_Directed, W.movie as Highest_Grossing_Movie_Written
-    from FILTERED k
-        JOIN grossingA A ON  k.person_id = A.person_id
-        JOIN grossingD D ON  k.person_id = D.person_id
-        JOIN grossingW W ON  k.person_id = W.person_id;
+  const person_id = req.params.person_id;
+
+  const baseQuery = `
+  WITH highest_grossing_IsCast AS (
+    SELECT DISTINCT P.person_id, M.movie_id AS highest_grossing_IsCast_movie_id, primary_title AS highest_grossing_IsCast_title, lifetime_grossing AS highest_grossing_IsCast_grossing
+    FROM Persons P JOIN IsCast IC on P.person_id = IC.person_id
+                JOIN Movies M on IC.movie_id = M.movie_id
+    WHERE P.person_id = '${person_id}'
+    ORDER BY lifetime_grossing DESC#
+    LIMIT 1
+  ), highest_grossing_IsWriter AS (
+      SELECT DISTINCT P.person_id, M.movie_id AS highest_grossing_IsWriter_movie_id, primary_title AS highest_grossing_IsWriter_title, lifetime_grossing AS highest_grossing_IsWriter_grossing
+      FROM Persons P JOIN IsWriter IW on P.person_id = IW.person_id
+                  JOIN Movies M on IW.movie_id = M.movie_id
+      WHERE P.person_id = '${person_id}'
+      ORDER BY lifetime_grossing DESC
+      LIMIT 1
+  ), highest_grossing_IsDirector AS (
+      SELECT DISTINCT P.person_id, M.movie_id AS highest_grossing_IsDirector_movie_id, primary_title AS highest_grossing_IsDirector_title, lifetime_grossing AS highest_grossing_IsDirector_grossing
+      FROM Persons P JOIN IsDirector ID on P.person_id = ID.person_id
+                  JOIN Movies M on ID.movie_id = M.movie_id
+      WHERE P.person_id = '${person_id}'
+      ORDER BY lifetime_grossing DESC
+      LIMIT 1
+  ), person_and_highest_grossign_information AS (
+      SELECT P.person_id, primary_name, birth_year, death_year,
+            highest_grossing_IsCast_movie_id, highest_grossing_IsCast_title, highest_grossing_IsCast_grossing,
+            highest_grossing_IsWriter_movie_id, highest_grossing_IsWriter_title, highest_grossing_IsWriter_grossing,
+            highest_grossing_IsDirector_movie_id, highest_grossing_IsDirector_title, highest_grossing_IsDirector_grossing
+      FROM Persons P JOIN highest_grossing_IsCast IC ON IC.person_id = P.person_id
+                      JOIN highest_grossing_IsDirector ID ON ID.person_id = P.person_id
+                      JOIN highest_grossing_IsWriter IW ON IW.person_id = P.person_id
+  )
+  SELECT P.person_id, primary_name, birth_year, death_year,
+          highest_grossing_IsCast_movie_id, highest_grossing_IsCast_title, highest_grossing_IsCast_grossing,
+          highest_grossing_IsWriter_movie_id, highest_grossing_IsWriter_title, highest_grossing_IsWriter_grossing,
+          highest_grossing_IsDirector_movie_id, highest_grossing_IsDirector_title, highest_grossing_IsDirector_grossing,
+          M2.movie_id AS movie_id_title_known_for, primary_title AS title_known_for
+  FROM person_and_highest_grossign_information P JOIN IsKnownFor IKF ON P.person_id = IKF.person_id
+      JOIN Movies M2 on IKF.movie_id = M2.movie_id
   `;
 
   const responseHandler = (error, results) => {
@@ -113,6 +68,8 @@ async function Person(req, res) {
   };
 
   connection.query(baseQuery, responseHandler);
+
+  console.log(baseQuery)
 }
 
 async function actors_work_with(req, res) {
@@ -124,101 +81,36 @@ async function actors_work_with(req, res) {
   const name_filter = req.query.name_filter ? req.query.name_filter : '';
 
 
-  const baseQuery = ` ${ /* This is just filtered based on Actors name and it taking too much time to execute ! i don't know the purpose of fitered the type since we are outputing the number of film acted / directed / written */'' }
+  const baseQuery = `
   
-  create view acted as( ${ /* count movie Acted */'' }
-
-    With Movie(movie_id, movie) as(
-    select movie_id, primary_title
-    from Movies),
+  create view p6 as(
+    select k.person_id, k.primary_name ,k.firstname ,k.surname,k.Born, k.Death, k.List_movie_knownfor
+    from FILTERED k);
     
-    Person(person_id, firstname, Surname, Born, Death) as(
-        select Distinct p.person_id, LEFT(primary_name,LOCATE(' ',primary_name) - 1) as Firstname,RIGHT(primary_name,length(primary_name) - LOCATE(' ',primary_name) ) as Surname, birth_year, death_year
-        from Persons p),
+    SELECT distinct P.person_id , P.primary_name # THIS QUERY JUST THE PERSON THAT PLAYED WITH TOM HARDY ${ /* TO FASTER THE QUERY THE BACKEND WILL TAKE THOSE INFORMATION AND THE FRONT END will join the movie count based on the names*/'' }
+    FROM Persons JOIN IsCast IC on Persons.person_id = IC.person_id
+        JOIN Movies M on M.movie_id = IC.movie_id
+        JOIN IsCast I on M.movie_id = I.movie_id
+        JOIN Persons P on P.person_id = I.person_id
+    WHERE Persons.primary_name = ${name_filter};
     
-    acted(person_id,firstname,surname,movieA,movie_id ,number_movies_acted_in, Born, Death) as(
-    select Distinct p.person_id,firstname,Surname ,movie,m.movie_id, count(distinct  m.movie_id), Born,Death
-    from Person p
-        Join IsCast i on i.person_id= p.person_id
-        join Movie m on i.movie_id = m.movie_id
-    Group BY firstname,Surname)
+    SELECT p.primary_name ,p.firstname ,p.surname,p.Born, p.Death, p.List_movie_knownfor,COUNT(*) as movie_acted_in
+    FROM Persons JOIN IsCast IC on Persons.person_id = IC.person_id
+        JOIN Movies M on M.movie_id = IC.movie_id
+        Join p6 p on Persons.person_id = p.person_id
+    WHERE Persons.person_id  = 'nm0289183'; #name of paul fox example ${ /* FRONT END WILL take the movie ids found and count their movie_acted in*/'' }
     
-    select * from acted
-    );
+    SELECT p.primary_name ,p.firstname ,p.surname,p.Born, p.Death, p.List_movie_knownfor,COUNT(*) as movie_directed_in
+    FROM Persons JOIN IsDirector ID on Persons.person_id = ID.person_id
+        JOIN Movies M on M.movie_id = ID.movie_id
+        Join p6 p on Persons.person_id = p.person_id
+    WHERE Persons.person_id  = 'nm0289183'; #name of paul fox example
     
-    create view directed as( ${ /* count movie Directed */'' }
-    
-    With Movie(movie_id, movie) as(
-    select movie_id, primary_title
-    from Movies),
-    
-    Person(person_id, firstname, Surname, Born, Death) as(
-        select Distinct p.person_id, LEFT(primary_name,LOCATE(' ',primary_name) - 1) as Firstname,RIGHT(primary_name,length(primary_name) - LOCATE(' ',primary_name) ) as Surname, birth_year, death_year
-        from Persons p),
-    
-    directed(person_id,firstname,surname,movieA,movie_id ,number_movies_directed, Born, Death) as(
-    select Distinct p.person_id,firstname,Surname ,movie,m.movie_id, count(distinct  m.movie_id) -1, Born,Death
-    from Person p
-        Join IsDirector i on i.person_id= p.person_id
-        join Movie m on i.movie_id = m.movie_id
-    Group BY firstname,Surname)
-    select * from directed
-    );
-    
-    
-    create view written as( ${ /* count movie Written */'' }
-    
-    With Movie(movie_id, movie) as(
-    select movie_id, primary_title
-    from Movies),
-    
-    Person(person_id, primary_name, firstname, Surname, Born, Death) as(
-        select Distinct p.person_id, primary_name, LEFT(primary_name,LOCATE(' ',primary_name) - 1) as Firstname,RIGHT(primary_name,length(primary_name) - LOCATE(' ',primary_name) ) as Surname, birth_year, death_year
-        from Persons p),
-    
-    written(person_id,primary_name,firstname,surname,movieA,movie_id ,number_movies_written, Born, Death) as(
-    select Distinct p.person_id,primary_name,firstname,Surname ,movie,m.movie_id, count(distinct  m.movie_id)-1, Born,Death
-    from Person p
-        Join IsWriter i on i.person_id= p.person_id
-        join Movie m on i.movie_id = m.movie_id
-    Group BY firstname,Surname)
-    select * from written
-    );
-    
-    create view p6 as( ${ /* Joining Evrything */'' }
-    select a.person_id,w.primary_name,a.firstname ,a.surname,a.Born, a.Death, a.movie_id, k.List_movie_knownfor ,a.number_movies_acted_in, d.number_movies_directed, w.number_movies_written
-    from FILTERED k
-    JOIN acted a on k.person_id =a.person_id
-    JOIN directed d on k.person_id = d.person_id
-    JOIN written w on k.person_id = w.person_id);
-    
-    
-    With VID(movie_id) As(
-    select distinct i.movie_id
-    from  IsCast i Join Persons p on i.person_id = p.person_id
-    WHERE p.primary_name = ${name_filter} ),
-    
-    Person_movie(primary_name, movie_id) As(
-    select p.primary_name,  i.movie_id
-    from Persons p
-    JOIN IsCast i on i.person_id = p.person_id ${ /* If we want to do the same thing with the different types just copy past this and add and if statement we changement the IsCast with Isdirected and IsWritten EASY !  */'' }
-    Join Movies M ON i.movie_id = i.movie_id
-    )
-    
-    select  p.primary_name ,p.firstname ,p.surname,p.Born, p.Death, p.List_movie_knownfor ,p.number_movies_acted_in, p.number_movies_directed, p.number_movies_written
-    from p6 p , Person_movie pm, VID v
-    Where pm.movie_id in (v.movie_id); ${ /* This is just an example running but with duplicate we need to use distinct or Group By but it taking infinite time -- replace with below */'' }
-  LIMIT ${limit}
-  OFFSET ${offset};
-  `; 
-
-  `
-  select Distinct p.primary_name ,p.firstname ,p.surname,p.Born, p.Death, p.List_movie_knownfor ,p.number_movies_acted_in, p.number_movies_directed, p.number_movies_written
-  from p6 p, Person_movie pm, VID v
-  where pm.movie_id IN (v.movie_id) and not exists(
-  select p.primary_name ,p.firstname ,p.surname,p.Born, p.Death, p.List_movie_knownfor ,p.number_movies_acted_in, p.number_movies_directed, p.number_movies_written
-  from p6 p, Person_movie pm, VID v
-  WHERE p.primary_name = ${name_filter} ` ${ /* Real Query but it is not running add distinct and delete the person choosen taking infinite time */'' }
+    SELECT p.primary_name ,p.firstname ,p.surname,p.Born, p.Death, p.List_movie_knownfor,COUNT(*) as movie_written
+    FROM Persons JOIN IsWriter IW on Persons.person_id = IW.person_id
+        JOIN Movies M on M.movie_id = IW.movie_id
+        Join p6 p on Persons.person_id = p.person_id
+    WHERE Persons.person_id  = 'nm0289183'; #name of paul fox example  ${ /* Real Query but it is not running add distinct and delete the person choosen taking infinite time */'' }`
 
   const responseHandler = (error, results) => {
     if (error) {
