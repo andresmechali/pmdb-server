@@ -106,19 +106,19 @@ async function find_actors(req, res) {
     FROM Persons p
     LEFT JOIN IsCast c ON p.person_id = c.person_id
     LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE m.primary_title LIKE '${movie_acted}'
+    WHERE m.primary_title LIKE '%${movie_acted}%'
   ), directed_filter AS (
     SELECT DISTINCT(p.person_id) AS directors
     FROM Persons p
     LEFT JOIN IsDirector c ON p.person_id = c.person_id
     LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE m.primary_title LIKE '${movie_directed}'
+    WHERE m.primary_title LIKE '%${movie_directed}%'
   ), written_filter AS (
     SELECT DISTINCT(p.person_id) AS writers
     FROM Persons p
     LEFT JOIN IsWriter c ON p.person_id = c.person_id
     LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE m.primary_title LIKE '${movie_written}'
+    WHERE m.primary_title LIKE '%${movie_written}%'
   ), movies_known_for AS (
     SELECT i.person_id, m.primary_title
     FROM IsKnownFor i
@@ -144,8 +144,8 @@ async function find_actors(req, res) {
   LEFT JOIN IsWriter w
       ON p.person_id = w.person_id
   GROUP BY p.primary_name, p.birth_year, p.death_year
-  HAVING p.birth_year ${birth_year} 
-    AND p.death_year ${death_year}
+  HAVING ${birth_year == null ? 'p.birth_year IS NOT NULL OR p.birth_year IS NULL' : `p.birth_year ${birth_year}`}  
+    ${death_year == null ? '' : `AND p.death_year ${death_year}`} 
   LIMIT ${limit}
   OFFSET ${offset}; 
   `;
