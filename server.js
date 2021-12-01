@@ -14,6 +14,9 @@ app.use(
 );
 
 // Get movies for a given page
+app.get("/home", routes.home);
+
+// Get movies for a given page
 app.get("/movies/:page", routes.movies);
 
 // Get basic information about a movie
@@ -27,9 +30,6 @@ app.get(
   "/movie-director-and-writer/:movie_id",
   routes.movie_director_and_writer
 );
-
-// Get genres for a given movie
-app.get("/movie-genres/:movie_id", routes.movie_genres);
 
 // Get all genres
 app.get("/genres", routes.all_genres);
