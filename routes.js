@@ -54,7 +54,7 @@ SELECT P.person_id, primary_name, birth_year, death_year,
       highest_grossing_IsCast_movie_id, highest_grossing_IsCast_title, highest_grossing_IsCast_grossing,
       highest_grossing_IsWriter_movie_id, highest_grossing_IsWriter_title, highest_grossing_IsWriter_grossing,
       highest_grossing_IsDirector_movie_id, highest_grossing_IsDirector_title, highest_grossing_IsDirector_grossing,
-      M2.movie_id AS movie_id_title_known_for, GROUP_CONCAT( distinct primary_title) AS title_known_for
+      GROUP_CONCAT(M2.movie_id) AS movie_id_title_known_for, GROUP_CONCAT( distinct primary_title) AS title_known_for
 FROM person_and_highest_grossign_information P JOIN IsKnownFor IKF ON P.person_id = IKF.person_id
   JOIN Movies M2 on IKF.movie_id = M2.movie_id;
   `;
