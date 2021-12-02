@@ -84,34 +84,105 @@ async function actors_work_with(req, res) {
 
   const baseQuery = `
   
-  create view p6 as(
-    select k.person_id, k.primary_name ,k.firstname ,k.surname,k.Born, k.Death, k.List_movie_knownfor
-    from FILTERED k);
-    
-    SELECT distinct P.person_id , P.primary_name # THIS QUERY JUST THE PERSON THAT PLAYED WITH TOM HARDY ${ /* TO FASTER THE QUERY THE BACKEND WILL TAKE THOSE INFORMATION AND THE FRONT END will join the movie count based on the names*/'' }
-    FROM Persons JOIN IsCast IC on Persons.person_id = IC.person_id
-        JOIN Movies M on M.movie_id = IC.movie_id
-        JOIN IsCast I on M.movie_id = I.movie_id
-        JOIN Persons P on P.person_id = I.person_id
-    WHERE Persons.primary_name = ${name_filter};
-    
-    SELECT p.primary_name ,p.firstname ,p.surname,p.Born, p.Death, p.List_movie_knownfor,COUNT(*) as movie_acted_in
-    FROM Persons JOIN IsCast IC on Persons.person_id = IC.person_id
-        JOIN Movies M on M.movie_id = IC.movie_id
-        Join p6 p on Persons.person_id = p.person_id
-    WHERE Persons.person_id  = 'nm0289183'; #name of paul fox example ${ /* FRONT END WILL take the movie ids found and count their movie_acted in*/'' }
-    
-    SELECT p.primary_name ,p.firstname ,p.surname,p.Born, p.Death, p.List_movie_knownfor,COUNT(*) as movie_directed_in
-    FROM Persons JOIN IsDirector ID on Persons.person_id = ID.person_id
-        JOIN Movies M on M.movie_id = ID.movie_id
-        Join p6 p on Persons.person_id = p.person_id
-    WHERE Persons.person_id  = 'nm0289183'; #name of paul fox example
-    
-    SELECT p.primary_name ,p.firstname ,p.surname,p.Born, p.Death, p.List_movie_knownfor,COUNT(*) as movie_written
-    FROM Persons JOIN IsWriter IW on Persons.person_id = IW.person_id
-        JOIN Movies M on M.movie_id = IW.movie_id
-        Join p6 p on Persons.person_id = p.person_id
-    WHERE Persons.person_id  = 'nm0289183'; #name of paul fox example  ${ /* Real Query but it is not running add distinct and delete the person choosen taking infinite time */'' }`
+  SELECT distinct P.person_id , P.primary_name # THIS QUERY JUST THE PERSON THAT PLAYED WITH TOM HARDY
+  FROM Persons JOIN IsCast IC on Persons.person_id = IC.person_id
+      JOIN Movies M on M.movie_id = IC.movie_id
+      JOIN IsCast I on M.movie_id = I.movie_id
+      JOIN Persons P on P.person_id = I.person_id
+  WHERE Persons.primary_name = ${name_filter};`
+
+  const responseHandler = (error, results) => {
+    if (error) {
+      console.log(error);
+      res.json({ error });
+    } else if (results) {
+      res.json({ results });
+    }
+  };
+
+  connection.query(baseQuery, responseHandler);
+
+  console.log(baseQuery)
+}
+
+async function actors_worked_with_count_acted(req, res) {
+
+  const page = req.params.page || 1;
+  const limit = 10;
+  const offset = limit * (page - 1);
+
+  const person_id = req.query.name_filter ? req.query.name_filter : '';
+
+
+  const baseQuery = `
+  
+  SELECT p.person_id,p.primary_name ,p.Born, p.Death, p.movie_id_title_known_for,p.List_movie_knownfor,COUNT(*) as number_movie_acted_in
+  FROM Persons JOIN IsCast IC on Persons.person_id = IC.person_id
+      JOIN Movies M on M.movie_id = IC.movie_id
+      Join p6 p on Persons.person_id = p.person_id
+  WHERE Persons.person_id  = ${person_id}; #name of paul fox example `
+
+  const responseHandler = (error, results) => {
+    if (error) {
+      console.log(error);
+      res.json({ error });
+    } else if (results) {
+      res.json({ results });
+    }
+  };
+
+  connection.query(baseQuery, responseHandler);
+
+  console.log(baseQuery)
+}
+
+async function aactors_worked_with_count_directed(req, res) {
+
+  const page = req.params.page || 1;
+  const limit = 10;
+  const offset = limit * (page - 1);
+
+  const person_id = req.query.name_filter ? req.query.name_filter : '';
+
+
+  const baseQuery = `
+  
+  SELECT p.person_id,p.primary_name ,p.Born, p.Death,p.movie_id_title_known_for, p.List_movie_knownfor,COUNT(*) as number_movie_directed_in
+  FROM Persons JOIN IsDirector ID on Persons.person_id = ID.person_id
+      JOIN Movies M on M.movie_id = ID.movie_id
+      Join p6 p on Persons.person_id = p.person_id
+  WHERE Persons.person_id  = ${person_id}; #name of paul fox example `
+
+  const responseHandler = (error, results) => {
+    if (error) {
+      console.log(error);
+      res.json({ error });
+    } else if (results) {
+      res.json({ results });
+    }
+  };
+
+  connection.query(baseQuery, responseHandler);
+
+  console.log(baseQuery)
+}
+
+async function actors_worked_with_count_written(req, res) {
+
+  const page = req.params.page || 1;
+  const limit = 10;
+  const offset = limit * (page - 1);
+
+  const person_id = req.query.name_filter ? req.query.name_filter : '';
+
+
+  const baseQuery = `
+  
+  SELECT p.person_id,p.primary_name ,p.Born, p.Death,p.movie_id_title_known_for, p.List_movie_knownfor,COUNT(*) as number_movie_written
+  FROM Persons JOIN IsWriter IW on Persons.person_id = IW.person_id
+      JOIN Movies M on M.movie_id = IW.movie_id
+      Join p6 p on Persons.person_id = p.person_id
+  WHERE Persons.person_id  = ${person_id}; #name of paul fox example `
 
   const responseHandler = (error, results) => {
     if (error) {
