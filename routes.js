@@ -76,6 +76,7 @@ async function movies(req, res) {
     rotten_tomatoes,
     min_year,
     max_year,
+    budget,
     grossing,
     actors,
     director,
@@ -120,12 +121,13 @@ async function movies(req, res) {
         primary_title,
         start_year,
         runtime_minutes,
-        poster_path,
+        posterPath AS poster_path,
         overview,
         imdb_score,
         tmdb_score,
         rotten_tomatoes_score,
         10 * imdb_score + 10 * tmdb_score + rotten_tomatoes_score - (2022 - m.start_year) / 3 AS total_score,
+        budget,
         lifetime_grossing,
         ${
           director
@@ -146,9 +148,11 @@ async function movies(req, res) {
         COUNT(*) OVER() AS full_count
     FROM (
         SELECT * FROM Movies
+        LEFT OUTER JOIN PMDB.MoviesPosterPath MPP on Movies.movie_id = MPP.tconst
         WHERE 1
         ${min_year ? `AND start_year >= ${min_year}` : ""}
         ${max_year ? `AND start_year <= ${max_year}` : ""}
+        ${budget ? `AND budget >= ${budget}` : ""}
         ${grossing ? `AND lifetime_grossing >= ${grossing}` : ""}
         ${value ? `AND primary_title LIKE '%${value}%'` : ""}
     ) AS m
@@ -284,19 +288,19 @@ async function find_actors(req, res) {
     FROM Persons p
     LEFT JOIN IsCast c ON p.person_id = c.person_id
     LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE m.primary_title LIKE '${movie_acted}'
+    WHERE m.primary_title LIKE '%${movie_acted}%'
   ), directed_filter AS (
     SELECT DISTINCT(p.person_id) AS directors
     FROM Persons p
     LEFT JOIN IsDirector c ON p.person_id = c.person_id
     LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE m.primary_title LIKE '${movie_directed}'
+    WHERE m.primary_title LIKE '%${movie_directed}%'
   ), written_filter AS (
     SELECT DISTINCT(p.person_id) AS writers
     FROM Persons p
     LEFT JOIN IsWriter c ON p.person_id = c.person_id
     LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE m.primary_title LIKE '${movie_written}'
+    WHERE m.primary_title LIKE '%${movie_written}%'
   ), movies_known_for AS (
     SELECT i.person_id, m.primary_title
     FROM IsKnownFor i
@@ -318,8 +322,12 @@ async function find_actors(req, res) {
   LEFT JOIN IsWriter w
       ON p.person_id = w.person_id
   GROUP BY p.primary_name, p.birth_year, p.death_year
-  HAVING p.birth_year ${birth_year} 
-    AND p.death_year ${death_year}
+  HAVING ${
+    birth_year == null
+      ? "p.birth_year IS NOT NULL OR p.birth_year IS NULL"
+      : `p.birth_year ${birth_year}`
+  } 
+    ${death_year == null ? "" : `AND p.death_year ${death_year}`}
   LIMIT ${limit}
   OFFSET ${offset}; 
   `;
