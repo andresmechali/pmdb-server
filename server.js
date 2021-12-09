@@ -37,6 +37,9 @@ app.get("/genres", routes.all_genres);
 // Get movie recommendations based on movie_id
 app.get("/movie_rec/:movie_id", routes.movie_rec);
 
+// Get movie recommendations based on person_id
+app.get("/movie_person_rec/:person_id", routes.movie_person_rec);
+
 // Get basic information about a person
 app.get("/person/:person_id", routes.person);
 
