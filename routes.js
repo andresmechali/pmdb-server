@@ -461,6 +461,135 @@ async function person(req, res) {
   }
 }
 
+async function movie_rec(req, res) {
+  const { movie_id } = req.params;
+
+  const baseQuery = `
+    WITH imdb_ratings AS (
+    SELECT movie_id, rating_score AS imdb_score, num_votes AS imdb_votes
+    FROM Ratings r
+    WHERE agency_id = 1
+    GROUP BY movie_id
+    ),
+    tmdb_ratings AS (
+    SELECT movie_id, rating_score AS tmdb_score, num_votes AS tmdb_votes
+    FROM Ratings r
+    WHERE agency_id = 2
+    GROUP BY movie_id
+    ),
+    rt_ratings AS (
+    SELECT movie_id, rating_score AS rt_score, num_votes AS rt_votes
+    FROM Ratings r
+    WHERE agency_id = 3
+    GROUP BY movie_id
+    ),
+    movie_genre AS (
+    SELECT m.movie_id,
+    GROUP_CONCAT(DISTINCT g.genre_name) AS genres
+    FROM (SELECT * FROM Movies WHERE movie_id = '${movie_id}') m
+    LEFT JOIN HasGenre hg ON hg.movie_id = m.movie_id
+    LEFT JOIN Genres g on g.genre_id = hg.genre_id),
+    all_movie_genres AS (
+    SELECT m.movie_id,
+    GROUP_CONCAT(DISTINCT g.genre_name) AS genres
+    FROM Movies m
+    LEFT JOIN HasGenre hg ON hg.movie_id = m.movie_id
+    LEFT JOIN Genres g on g.genre_id = hg.genre_id
+    GROUP BY 1)
+    SELECT m.primary_title AS movie_title,
+    a.genres AS genres,
+    ((i.imdb_score + t.tmdb_score + (r.rt_score / 10)) / 3) AS average_score
+    FROM (SELECT * FROM Movies WHERE movie_id != '${movie_id}') m
+    LEFT JOIN imdb_ratings i ON m.movie_id = i.movie_id
+    LEFT JOIN tmdb_ratings t ON m.movie_id = t.movie_id
+    LEFT JOIN rt_ratings r ON m.movie_id = r.movie_id
+    LEFT JOIN all_movie_genres a ON m.movie_id = a.movie_id
+    WHERE genres LIKE (SELECT genres FROM movie_genre)
+    ORDER BY average_score DESC
+    LIMIT 10;
+  `;
+
+  const responseHandler = (error, results) => {
+    if (error || results?.length === 0) {
+      console.log(error);
+      res.json({ error });
+    } else if (results) {
+      res.json({ movie: results });
+    }
+  };
+
+  connection.query(baseQuery, responseHandler);
+}
+
+async function movie_person_rec(req, res) {
+  const { person_id } = req.params;
+
+  const baseQuery = `
+    WITH cast_filter AS (
+      SELECT DISTINCT(m.primary_title) AS movies,
+      c.movie_id
+      FROM Persons p
+      LEFT JOIN IsCast c ON p.person_id = c.person_id
+      LEFT JOIN Movies m ON c.movie_id = m.movie_id
+      WHERE p.person_id LIKE '${person_id}'
+    ), directed_filter AS (
+      SELECT DISTINCT(m.primary_title) AS movies,
+      c.movie_id
+      FROM Persons p
+      LEFT JOIN IsDirector c ON p.person_id = c.person_id
+      LEFT JOIN Movies m ON c.movie_id = m.movie_id
+      WHERE p.person_id LIKE '${person_id}'
+    ), written_filter AS (
+      SELECT DISTINCT(m.primary_title) AS movies,
+      c.movie_id
+      FROM Persons p
+      LEFT JOIN IsWriter c ON p.person_id = c.person_id
+      LEFT JOIN Movies m ON c.movie_id = m.movie_id
+      WHERE p.person_id LIKE '${person_id}'
+    ), all_movies AS (
+      SELECT * FROM cast_filter WHERE movies IS NOT NULL
+      UNION
+      SELECT * FROM directed_filter WHERE movies IS NOT NULL
+      UNION
+      SELECT * FROM written_filter WHERE movies IS NOT NULL
+   ), imdb_ratings AS (
+      SELECT movie_id, rating_score AS imdb_score, num_votes AS imdb_votes
+      FROM Ratings r
+      WHERE agency_id = 1
+      GROUP BY movie_id
+    ), tmdb_ratings AS (
+      SELECT movie_id, rating_score AS tmdb_score, num_votes AS tmdb_votes
+      FROM Ratings r
+      WHERE agency_id = 2
+      GROUP BY movie_id
+    ), rt_ratings AS (
+      SELECT movie_id, rating_score AS rt_score, num_votes AS rt_votes
+      FROM Ratings r
+      WHERE agency_id = 3
+      GROUP BY movie_id
+    )
+    SELECT m.movies AS movie_title,
+    ((i.imdb_score + t.tmdb_score + (r.rt_score / 10)) / 3) AS average_score
+    FROM all_movies m
+    LEFT JOIN imdb_ratings i ON m.movie_id = i.movie_id
+    LEFT JOIN tmdb_ratings t ON m.movie_id = t.movie_id
+    LEFT JOIN rt_ratings r ON m.movie_id = r.movie_id
+    ORDER BY average_score DESC
+    LIMIT 10;
+  `;
+
+  const responseHandler = (error, results) => {
+    if (error || results?.length === 0) {
+      console.log(error);
+      res.json({ error });
+    } else if (results) {
+      res.json({ person: results });
+    }
+  };
+
+  connection.query(baseQuery, responseHandler);
+}
+
 module.exports = {
   home,
   movies,
@@ -469,4 +598,6 @@ module.exports = {
   movie_director_and_writer,
   all_genres,
   person,
+  movie_rec,
+  movie_person_rec,
 };
