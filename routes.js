@@ -69,7 +69,7 @@ async function home(req, res) {
 async function movies(req, res) {
   // a GET request to /movies
   const {
-    value,
+    name,
     genres,
     imdb,
     tmdb,
@@ -154,7 +154,7 @@ async function movies(req, res) {
         ${max_year ? `AND start_year <= ${max_year}` : ""}
         ${budget ? `AND budget >= ${budget}` : ""}
         ${grossing ? `AND lifetime_grossing >= ${grossing}` : ""}
-        ${value ? `AND primary_title LIKE '%${value}%'` : ""}
+        ${name ? `AND primary_title LIKE '%${name}%'` : ""}
     ) AS m
     ${imdb ? "JOIN" : "LEFT JOIN"} imdb ON m.movie_id = imdb.movie_id
     ${tmdb ? "JOIN" : "LEFT JOIN"} tmdb ON m.movie_id = tmdb.movie_id
@@ -174,7 +174,7 @@ async function movies(req, res) {
     ${
       actorsList.length > 0
         ? `AND (${actorsList
-            .map((name) => `P_IC.primary_name LIKE '%${name}%'`)
+            .map((actor_name) => `P_IC.primary_name LIKE '%${actor_name}%'`)
             .join(" OR ")})`
         : ""
     }
@@ -271,61 +271,88 @@ async function movie(req, res) {
 // Manuel
 async function persons(req, res) {
   const {
-    value,
+    name,
     min_birth_year,
     max_birth_year,
     min_death_year,
     max_death_year,
-    movie_acted,
-    movie_directed,
-    movie_written,
+    movie_name,
+    participation,
   } = req.query;
 
   const page = req.params.page || 1;
-  const limit = 10;
+  const limit = 12;
   const offset = limit * (page - 1);
 
+  const roles = participation.split(",");
+  const isActor = roles.indexOf("acted") >= 0;
+  const isDirector = roles.indexOf("directed") >= 0;
+  const isWriter = roles.indexOf("wrote") >= 0;
+
+  const movie_filter = isActor || isDirector || isWriter;
+
   const baseQuery = `
-    WITH cast_filter AS (
-      SELECT DISTINCT(p.person_id) AS actors
+    WITH filtered_persons AS (
+      SELECT *
       FROM Persons p
-      LEFT JOIN IsCast c ON p.person_id = c.person_id
-      LEFT JOIN Movies m ON c.movie_id = m.movie_id
-      WHERE 1
-      ${movie_acted ? `AND m.primary_title LIKE '%${movie_acted}%'` : ""}
-      ${value ? `AND p.primary_name LIKE '%${value}%'` : ""}
-    ), directed_filter AS (
-      SELECT DISTINCT(p.person_id) AS directors
-      FROM Persons p
-      LEFT JOIN IsDirector c ON p.person_id = c.person_id
-      LEFT JOIN Movies m ON c.movie_id = m.movie_id
-      WHERE 1
-      ${movie_directed ? `AND m.primary_title LIKE '%${movie_directed}%'` : ""}
-      ${value ? `AND p.primary_name LIKE '%${value}%'` : ""}
-    ), written_filter AS (
-      SELECT DISTINCT(p.person_id) AS writers
-      FROM Persons p
-      LEFT JOIN IsWriter c ON p.person_id = c.person_id
-      LEFT JOIN Movies m ON c.movie_id = m.movie_id
-      WHERE 1
-      ${movie_written ? `AND m.primary_title LIKE '%${movie_written}%'` : ""}
-      ${value ? `AND p.primary_name LIKE '%${value}%'` : ""}
+      ${name ? `WHERE p.primary_name LIKE '%${name}%'` : ""}
+    ), filtered_movies AS (
+      SELECT *
+      FROM Movies
+      ${movie_filter ? `WHERE primary_title LIKE '%${movie_name}%'` : ""}
+    ), acted AS (
+      SELECT DISTINCT(p.person_id) as person_id
+      FROM filtered_persons p
+      JOIN IsCast c ON p.person_id = c.person_id
+      ${isActor ? "JOIN filtered_movies m ON c.movie_id = m.movie_id" : ""}
+    ), directed AS (
+      SELECT DISTINCT(p.person_id) as person_id
+      FROM filtered_persons p
+      JOIN IsDirector c ON p.person_id = c.person_id
+      ${isDirector ? "JOIN filtered_movies m ON c.movie_id = m.movie_id" : ""}
+    ), wrote AS (
+      SELECT DISTINCT(p.person_id) as person_id
+      FROM filtered_persons p
+      JOIN IsWriter c ON p.person_id = c.person_id
+      ${isWriter ? "JOIN filtered_movies m ON c.movie_id = m.movie_id" : ""}
     ), movies_known_for AS (
-      SELECT i.person_id, m.primary_title
+      SELECT m.movie_id, m.start_year, i.person_id, m.primary_title
       FROM IsKnownFor i
       LEFT JOIN Movies m
           ON i.movie_id = m.movie_id
     )
-    SELECT p.person_id, p.primary_name, p.birth_year, p.death_year,
-       GROUP_CONCAT(DISTINCT i.primary_title)  AS movies_known_for,
+    SELECT p.person_id, p.primary_name, p.birth_year, p.death_year, COUNT(*) OVER() AS full_count,
+       GROUP_CONCAT(DISTINCT CONCAT(i.movie_id, ',', i.start_year, ',', i.primary_title) ORDER BY i.start_year SEPARATOR ";") AS movies,
        COUNT(c.person_id)  AS movies_acted,
        COUNT(d.person_id) AS movies_directed,
        COUNT(w.person_id)  AS movies_written
     FROM (
-    SELECT *
-    FROM Persons
-    WHERE 1 
-    AND person_id IN ((SELECT actors FROM cast_filter) INTERSECT (SELECT directors FROM directed_filter) INTERSECT (SELECT writers FROM written_filter))) p
+      SELECT *
+      FROM filtered_persons
+      WHERE 1
+      ${
+        movie_filter
+          ? `AND person_id IN (${[
+              "(SELECT person_id FROM acted)",
+              "(SELECT person_id FROM directed)",
+              "(SELECT person_id FROM wrote)",
+            ]
+              .filter((_, idx) => {
+                if (idx === 0 && isActor) {
+                  return true;
+                }
+                if (idx === 1 && isDirector) {
+                  return true;
+                }
+                if (idx === 2 && isWriter) {
+                  return true;
+                }
+                return false;
+              })
+              .join(" UNION ")})`
+          : ""
+      }
+    ) p
     LEFT JOIN movies_known_for i
         ON p.person_id = i.person_id
     LEFT JOIN IsCast c
@@ -349,7 +376,7 @@ async function persons(req, res) {
     }
     GROUP BY p.primary_name, p.birth_year, p.death_year
     LIMIT ${limit}
-    OFFSET ${offset}; 
+    OFFSET ${offset};
   `;
 
   const responseHandler = (error, results) => {
