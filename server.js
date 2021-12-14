@@ -46,6 +46,9 @@ app.get("/recommendations/movie/:movie_id", routes.movie_rec);
 // Get movie recommendations based on a given person
 app.get("/recommendations/person/:person_id", routes.movie_person_rec);
 
+// Get persons related with a given person
+app.get("/related/:person_id", routes.related_actors);
+
 app.listen(config.server_port, () => {
   console.log(
     `Server running at http://${config.server_host}:${config.server_port}/`

@@ -510,6 +510,67 @@ async function person(req, res) {
   }
 }
 
+async function related_actors(req, res) {
+  const { person_id } = req.params;
+
+  const baseQuery = `
+    WITH all_roles AS (
+        SELECT person_id, movie_id, 'Cast' AS role
+        FROM IsCast
+        UNION
+        SELECT person_id, movie_id, 'Director' AS role
+        FROM IsDirector
+        UNION
+        SELECT person_id, movie_id, 'Writer' AS role
+        FROM IsWriter
+    ), person_roles AS (
+        SELECT all_roles.movie_id
+        FROM all_roles
+        WHERE person_id = '${person_id}'
+    ),
+     filtered_movies AS (
+        SELECT movie_id, primary_title, start_year
+        FROM Movies
+        WHERE movie_id IN (
+            SELECT ar.movie_id
+            FROM all_roles ar
+        )
+    ),
+     filtered_roles AS (
+         SELECT *
+        FROM all_roles ar
+        WHERE ar.movie_id IN (SELECT pr.movie_id FROM person_roles pr)
+    )
+    SELECT
+        p.person_id,
+        p.primary_name,
+        p.birth_year,
+        p.death_year,
+        GROUP_CONCAT(DISTINCT CONCAT(m.movie_id, ',', m.start_year, ',', m.primary_title) ORDER BY m.start_year DESC SEPARATOR ';') AS movies,
+        GROUP_CONCAT(DISTINCT fr.role SEPARATOR ', ') AS roles
+    FROM Persons p
+    JOIN filtered_roles fr ON fr.person_id = p.person_id
+    JOIN filtered_movies m ON fr.movie_id = m.movie_id
+    GROUP BY p.person_id
+    LIMIT 6;
+  `;
+
+  const responseHandler = (error, persons) => {
+    if (error) {
+      console.log(error);
+      res.json({ error });
+    } else if (persons) {
+      res.json({ persons });
+    }
+  };
+
+  if (person_id) {
+    connection.query(baseQuery, responseHandler);
+  } else {
+    res.json({ error: "person_id not provided" });
+  }
+}
+
 async function movie_rec(req, res) {
   const { movie_id } = req.params;
 
@@ -667,4 +728,5 @@ module.exports = {
   person,
   movie_rec,
   movie_person_rec,
+  related_actors,
 };
