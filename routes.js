@@ -441,7 +441,8 @@ async function find_actors(req, res) {
      COUNT(c.person_id)  AS movies_acted,
      COUNT(d.person_id) AS movies_directed,
      COUNT(w.person_id)  AS movies_written
-  FROM (SELECT * FROM Persons WHERE person_id IN ((SELECT actors FROM cast_filter) UNION (SELECT directors FROM directed_filter) UNION (SELECT writers FROM written_filter))) p
+  FROM (SELECT * FROM Persons WHERE person_id IN ((SELECT actors FROM cast_filter) UNION (SELECT directors FROM directed_filter) 
+  UNION (SELECT writers FROM written_filter))) p
   LEFT JOIN movies_known_for i
       ON p.person_id = i.person_id
   LEFT JOIN IsCast c
