@@ -45,13 +45,11 @@ async function home(req, res) {
             LEFT OUTER JOIN tmdb on tmdb.movie_id = RandomMovies.movie_id
             LEFT OUTER JOIN rotten_tomatoes on rotten_tomatoes.movie_id = RandomMovies.movie_id
     */
-    SELECT Movies.movie_id, primary_title, start_year, posterPath AS poster_path, imdb_score, tmdb_score, rotten_tomatoes_score
-    FROM Movies LEFT OUTER JOIN PMDB.MoviesPosterPath MPP on Movies.movie_id = MPP.tconst
-      LEFT OUTER JOIN imdb on imdb.movie_id = Movies.movie_id
-      LEFT OUTER JOIN tmdb on tmdb.movie_id = Movies.movie_id
-      LEFT OUTER JOIN rotten_tomatoes on rotten_tomatoes.movie_id = Movies.movie_id
-    ORDER BY RAND()
-    LIMIT 100;
+    SELECT RandomMovies.movie_id, primary_title, start_year, poster_path, imdb_score, tmdb_score, rotten_tomatoes_score
+    FROM (SELECT * FROM Movies ORDER BY RAND() LIMIT 100) AS RandomMovies
+      LEFT OUTER JOIN imdb on imdb.movie_id = RandomMovies.movie_id
+      LEFT OUTER JOIN tmdb on tmdb.movie_id = RandomMovies.movie_id
+      LEFT OUTER JOIN rotten_tomatoes on rotten_tomatoes.movie_id = RandomMovies.movie_id
   `;
 
   const responseHandler = (error, results) => {
@@ -69,7 +67,7 @@ async function home(req, res) {
 async function movies(req, res) {
   // a GET request to /movies
   const {
-    value,
+    name,
     genres,
     imdb,
     tmdb,
@@ -121,7 +119,7 @@ async function movies(req, res) {
         primary_title,
         start_year,
         runtime_minutes,
-        posterPath AS poster_path,
+        poster_path,
         overview,
         imdb_score,
         tmdb_score,
@@ -130,71 +128,70 @@ async function movies(req, res) {
         budget,
         lifetime_grossing,
         ${
-          director
-            ? `
+      director
+          ? `
               P_ID.person_id AS director_id,
               P_ID.primary_name AS director_name,
             `
-            : ""
-        }
+          : ""
+  }
         ${
-          writer
-            ? `
+      writer
+          ? `
               P_IW.person_id AS writer_id,
               P_IW.primary_name AS writer_name,
             `
-            : ""
-        }
+          : ""
+  }
         COUNT(*) OVER() AS full_count
     FROM (
         SELECT * FROM Movies
-        LEFT OUTER JOIN PMDB.MoviesPosterPath MPP on Movies.movie_id = MPP.tconst
         WHERE 1
         ${min_year ? `AND start_year >= ${min_year}` : ""}
         ${max_year ? `AND start_year <= ${max_year}` : ""}
         ${budget ? `AND budget >= ${budget}` : ""}
         ${grossing ? `AND lifetime_grossing >= ${grossing}` : ""}
-        ${value ? `AND primary_title LIKE '%${value}%'` : ""}
+        ${name ? `AND primary_title LIKE '%${name}%'` : ""}
     ) AS m
     ${imdb ? "JOIN" : "LEFT JOIN"} imdb ON m.movie_id = imdb.movie_id
     ${tmdb ? "JOIN" : "LEFT JOIN"} tmdb ON m.movie_id = tmdb.movie_id
     ${
       rotten_tomatoes ? "JOIN" : "LEFT JOIN"
-    } rotten_tomatoes ON m.movie_id = rotten_tomatoes.movie_id
+  } rotten_tomatoes ON m.movie_id = rotten_tomatoes.movie_id
     JOIN HasGenre hg ON m.movie_id = hg.movie_id
     ${
       genreList.length > 0
-        ? `AND (${genreList
-            .map((genre_id) => `hg.genre_id = '${genre_id}'`)
-            .join(" OR ")}) `
-        : ""
-    }
+          ? `AND (${genreList
+              .map((genre_id) => `hg.genre_id = '${genre_id}'`)
+              .join(" OR ")}) `
+          : ""
+  }
     JOIN IsCast IC ON m.movie_id = IC.movie_id
     JOIN Persons P_IC ON IC.person_id = P_IC.person_id
     ${
       actorsList.length > 0
-        ? `AND (${actorsList
-            .map((name) => `P_IC.primary_name LIKE '%${name}%'`)
-            .join(" OR ")})`
-        : ""
-    }
+          ? `AND (${actorsList
+              .map((actor_name) => `P_IC.primary_name LIKE '%${actor_name}%'`)
+              .join(" OR ")})`
+          : ""
+  }
     
     ${
       director
-        ? `
+          ? `
           JOIN IsDirector ID ON m.movie_id = ID.movie_id
           JOIN Persons P_ID on ID.person_id = P_ID.person_id AND P_ID.primary_name LIKE '%${director}%'
         `
-        : ""
-    }
+          : ""
+  }
     ${
       writer
-        ? `
+          ? `
           JOIN IsWriter IW ON m.movie_id = IW.movie_id
           JOIN Persons P_IW on IW.person_id = P_IW.person_id AND P_IW.primary_name LIKE '%${writer}%'
         `
-        : ""
-    }
+          : ""
+  }
     GROUP BY m.movie_id
     ORDER BY total_score DESC
     LIMIT ${limit}
@@ -269,197 +266,115 @@ async function movie(req, res) {
 }
 
 // Manuel
-async function movie_rec(req, res) {
-  const movie_id = req.params.movie_id;
+async function persons(req, res) {
+  const {
+    name,
+    min_birth_year,
+    max_birth_year,
+    min_death_year,
+    max_death_year,
+    movie_name,
+    roles,
+  } = req.query;
 
-  const baseQuery = `
-  WITH imdb_ratings AS (
-  SELECT movie_id, rating_score AS imdb_score, num_votes AS imdb_votes
-  FROM Ratings r
-  WHERE agency_id = 1
-  GROUP BY movie_id
-  ),
-  tmdb_ratings AS (
-  SELECT movie_id, rating_score AS tmdb_score, num_votes AS tmdb_votes
-  FROM Ratings r
-  WHERE agency_id = 2
-  GROUP BY movie_id
-  ),
-  rt_ratings AS (
-  SELECT movie_id, rating_score AS rt_score, num_votes AS rt_votes
-  FROM Ratings r
-  WHERE agency_id = 3
-  GROUP BY movie_id
-  ),
-  movie_genre AS (
-  SELECT m.movie_id,
-  GROUP_CONCAT(DISTINCT g.genre_name) AS genres
-  FROM (SELECT * FROM Movies WHERE movie_id = '${movie_id}') m
-  LEFT JOIN HasGenre hg ON hg.movie_id = m.movie_id
-  LEFT JOIN Genres g on g.genre_id = hg.genre_id),
-  all_movie_genres AS (
-  SELECT m.movie_id,
-  GROUP_CONCAT(DISTINCT g.genre_name) AS genres
-  FROM Movies m
-  LEFT JOIN HasGenre hg ON hg.movie_id = m.movie_id
-  LEFT JOIN Genres g on g.genre_id = hg.genre_id
-  GROUP BY 1)
-  SELECT m.primary_title AS movie_title,
-  a.genres AS genres,
-  ((i.imdb_score + t.tmdb_score + (r.rt_score / 10)) / 3) AS average_score
-  FROM (SELECT * FROM Movies WHERE movie_id != '${movie_id}') m
-  LEFT JOIN imdb_ratings i ON m.movie_id = i.movie_id
-  LEFT JOIN tmdb_ratings t ON m.movie_id = t.movie_id
-  LEFT JOIN rt_ratings r ON m.movie_id = r.movie_id
-  LEFT JOIN all_movie_genres a ON m.movie_id = a.movie_id
-  WHERE genres LIKE (SELECT genres FROM movie_genre)
-  ORDER BY average_score DESC
-  LIMIT 10;
-  `;
-
-  const responseHandler = (error, results) => {
-    if (error || results?.length === 0) {
-      console.log(error);
-      res.json({ error });
-    } else if (results) {
-      res.json({ movie: results});
-    }
-  };
-
-  connection.query(baseQuery, responseHandler);
-}
-
-async function movie_person_rec(req, res) {
-  const person_id = req.params.person_id;
-
-  const baseQuery = `
-  WITH cast_filter AS (
-    SELECT DISTINCT(m.primary_title) AS movies,
-    c.movie_id
-    FROM Persons p
-    LEFT JOIN IsCast c ON p.person_id = c.person_id
-    LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE p.person_id LIKE '${person_id}'
-  ), directed_filter AS (
-    SELECT DISTINCT(m.primary_title) AS movies,
-    c.movie_id
-    FROM Persons p
-    LEFT JOIN IsDirector c ON p.person_id = c.person_id
-    LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE p.person_id LIKE '${person_id}'
-  ), written_filter AS (
-    SELECT DISTINCT(m.primary_title) AS movies,
-    c.movie_id
-    FROM Persons p
-    LEFT JOIN IsWriter c ON p.person_id = c.person_id
-    LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE p.person_id LIKE '${person_id}'
-  ), all_movies AS (
-    SELECT * FROM cast_filter WHERE movies IS NOT NULL
-    UNION
-    SELECT * FROM directed_filter WHERE movies IS NOT NULL
-    UNION
-    SELECT * FROM written_filter WHERE movies IS NOT NULL
- ), imdb_ratings AS (
-    SELECT movie_id, rating_score AS imdb_score, num_votes AS imdb_votes
-    FROM Ratings r
-    WHERE agency_id = 1
-    GROUP BY movie_id
-  ), tmdb_ratings AS (
-    SELECT movie_id, rating_score AS tmdb_score, num_votes AS tmdb_votes
-    FROM Ratings r
-    WHERE agency_id = 2
-    GROUP BY movie_id
-  ), rt_ratings AS (
-    SELECT movie_id, rating_score AS rt_score, num_votes AS rt_votes
-    FROM Ratings r
-    WHERE agency_id = 3
-    GROUP BY movie_id
-  )
-  SELECT m.movies AS movie_title,
-  ((i.imdb_score + t.tmdb_score + (r.rt_score / 10)) / 3) AS average_score
-  FROM all_movies m
-  LEFT JOIN imdb_ratings i ON m.movie_id = i.movie_id
-  LEFT JOIN tmdb_ratings t ON m.movie_id = t.movie_id
-  LEFT JOIN rt_ratings r ON m.movie_id = r.movie_id
-  ORDER BY average_score DESC
-  LIMIT 10;
-  `;
-
-  const responseHandler = (error, results) => {
-    if (error || results?.length === 0) {
-      console.log(error);
-      res.json({ error });
-    } else if (results) {
-      res.json({ person: results});
-    }
-  };
-
-  connection.query(baseQuery, responseHandler);
-}
-
-async function find_actors(req, res) {
   const page = req.params.page || 1;
-  const limit = 10;
+  const limit = 12;
   const offset = limit * (page - 1);
 
-  const birth_year = req.query.birth_year ? req.query.birth_year : "> 0";
-  const death_year = req.query.death_year ? req.query.death_year : "> 0";
-  const movie_acted = req.query.movie_acted ? req.query.movie_acted : "";
-  const movie_directed = req.query.movie_directed
-    ? req.query.movie_directed
-    : "";
-  const movie_written = req.query.movie_written ? req.query.movie_written : "";
+  const selectedRoles = roles?.split(",");
+  let isCast = selectedRoles?.indexOf("cast") > -1;
+  let isDirector = selectedRoles?.indexOf("director") > -1;
+  let isWriter = selectedRoles?.indexOf("writer") > -1;
+
+  let hasRole = isCast || isDirector || isWriter;
+  const hasAllRoles = isCast && isDirector && isWriter;
+
+  if (!hasRole) {
+    isCast = true;
+    isDirector = true;
+    isWriter = true;
+  }
+
+  if (hasAllRoles) {
+    hasRole = false;
+  }
 
   const baseQuery = `
-  WITH cast_filter AS (
-    SELECT DISTINCT(p.person_id) AS actors
+    WITH participated AS (
+        ${[
+    `
+            SELECT person_id, movie_id, 'Cast' AS role
+            FROM IsCast    
+          `,
+    `
+            SELECT person_id, movie_id, 'Director' AS role
+            FROM IsDirector
+          `,
+    `
+            SELECT person_id, movie_id, 'Writer' AS role
+            FROM IsWriter          
+          `,
+  ]
+      .filter((_, idx) => {
+        if (idx === 0 && isCast) {
+          return true;
+        } else if (idx === 1 && isDirector) {
+          return true;
+        } else if (idx === 2 && isWriter) {
+          return true;
+        }
+        return false;
+      })
+      .join(" UNION ")}
+    ) 
+    ${
+      hasRole
+          ? `
+      ,all_roles AS (
+          SELECT person_id, movie_id, 'Cast' AS role
+          FROM IsCast
+          UNION
+          SELECT person_id, movie_id, 'Director' AS role
+          FROM IsDirector
+          UNION
+          SELECT person_id, movie_id, 'Writer' AS role
+          FROM IsWriter
+      )
+    `
+          : ""
+  }
+    
+    SELECT p.person_id, p.primary_name, p.birth_year, p.death_year,
+           GROUP_CONCAT(DISTINCT CONCAT(m.movie_id, ',', m.start_year, ',', m.primary_title) ORDER BY m.start_year DESC SEPARATOR ';') AS movies,
+           ${
+      hasRole
+          ? `GROUP_CONCAT(DISTINCT ar.role SEPARATOR ', ') AS roles,`
+          : `GROUP_CONCAT(DISTINCT participated.role SEPARATOR ', ') AS roles,`
+  }
+           
+           COUNT(*) OVER() AS full_count
     FROM Persons p
-    LEFT JOIN IsCast c ON p.person_id = c.person_id
-    LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE m.primary_title LIKE '%${movie_acted}%'
-  ), directed_filter AS (
-    SELECT DISTINCT(p.person_id) AS directors
-    FROM Persons p
-    LEFT JOIN IsDirector c ON p.person_id = c.person_id
-    LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE m.primary_title LIKE '%${movie_directed}%'
-  ), written_filter AS (
-    SELECT DISTINCT(p.person_id) AS writers
-    FROM Persons p
-    LEFT JOIN IsWriter c ON p.person_id = c.person_id
-    LEFT JOIN Movies m ON c.movie_id = m.movie_id
-    WHERE m.primary_title LIKE '%${movie_written}%'
-  ), movies_known_for AS (
-    SELECT i.person_id, m.primary_title
-    FROM IsKnownFor i
-    LEFT JOIN Movies m
-        ON i.movie_id = m.movie_id
-  )
-  SELECT p.primary_name, p.birth_year, p.death_year,
-     GROUP_CONCAT(DISTINCT i.primary_title)  AS movies_known_for,
-     COUNT(c.person_id)  AS movies_acted,
-     COUNT(d.person_id) AS movies_directed,
-     COUNT(w.person_id)  AS movies_written
-  FROM (SELECT * FROM Persons WHERE person_id IN ((SELECT actors FROM cast_filter) UNION (SELECT directors FROM directed_filter) 
-  UNION (SELECT writers FROM written_filter))) p
-  LEFT JOIN movies_known_for i
-      ON p.person_id = i.person_id
-  LEFT JOIN IsCast c
-      ON p.person_id = c.person_id
-  LEFT JOIN IsDirector d
-      ON p.person_id = d.person_id
-  LEFT JOIN IsWriter w
-      ON p.person_id = w.person_id
-  GROUP BY p.primary_name, p.birth_year, p.death_year
-  HAVING ${
-    birth_year == null
-      ? "p.birth_year IS NOT NULL OR p.birth_year IS NULL"
-      : `p.birth_year ${birth_year}`
-  } 
-    ${death_year == null ? "" : `AND p.death_year ${death_year}`}
-  LIMIT ${limit}
-  OFFSET ${offset}; 
+    JOIN participated on participated.person_id = p.person_id
+    ${hasRole ? `JOIN all_roles ar on ar.person_id = p.person_id` : ""}
+    JOIN Movies m on participated.movie_id = m.movie_id
+    ${movie_name ? `and m.primary_title LIKE '%${movie_name}%'` : ""}
+    WHERE 1
+    ${name ? `AND p.primary_name LIKE '%${name}%'` : ""}
+    ${min_birth_year ? `AND p.birth_year >= ${min_birth_year}` : ""}
+    ${max_birth_year ? `AND p.birth_year <= ${max_birth_year}` : ""}
+    ${
+      min_death_year
+          ? `AND p.death_year IS NOT NULL AND p.death_year >= ${min_death_year}`
+          : ""
+  }
+    ${
+      max_death_year
+          ? `AND p.death_year IS NOT NULL AND p.death_year <= ${max_death_year}`
+          : ""
+  }
+    GROUP BY p.person_id, p.primary_name, p.birth_year, p.death_year
+    LIMIT ${limit}
+    OFFSET ${offset}; 
   `;
 
   const responseHandler = (error, results) => {
@@ -472,8 +387,6 @@ async function find_actors(req, res) {
   };
 
   connection.query(baseQuery, responseHandler);
-
-  console.log(baseQuery);
 }
 
 /*
@@ -555,8 +468,8 @@ async function all_genres(req, res) {
   };
 
   connection.query(
-    "SELECT * FROM Genres ORDER BY genre_name ASC;",
-    responseHandler
+      "SELECT * FROM Genres ORDER BY genre_name ASC;",
+      responseHandler
   );
 }
 
@@ -567,11 +480,17 @@ async function person(req, res) {
   const person_id = req.params.person_id;
 
   const baseQuery = `
-    SELECT p.person_id, primary_name, birth_year, death_year, m.movie_id, primary_title, start_year, IC.characters
+    SELECT p.person_id, primary_name, birth_year, death_year, m.movie_id, primary_title, start_year, IC.characters,
+    COUNT (DISTINCT m.movie_id) AS number_of_movies,
+    COUNT (DISTINCT IC.movie_id) AS movies_acted,
+    COUNT (DISTINCT ID.movie_id) AS movies_directed,
+    COUNT (DISTINCT IW.movie_id) AS movies_written
     FROM Persons p
     LEFT JOIN IsKnownFor IKF ON p.person_id = IKF.person_id
     LEFT JOIN Movies m ON IKF.movie_id = m.movie_id
     LEFT JOIN IsCast IC on m.movie_id = IC.movie_id AND p.person_id = IC.person_id
+    LEFT JOIN IsDirector ID on m.movie_id = ID.movie_id AND p.person_id = ID.person_id
+    LEFT JOIN IsWriter IW on m.movie_id = IW.movie_id AND p.person_id = IW.person_id
     WHERE p.person_id = '${person_id}';
   `;
 
@@ -591,14 +510,223 @@ async function person(req, res) {
   }
 }
 
+async function related_actors(req, res) {
+  const { person_id } = req.params;
+
+  const baseQuery = `
+    WITH all_roles AS (
+        SELECT person_id, movie_id, 'Cast' AS role
+        FROM IsCast
+        UNION
+        SELECT person_id, movie_id, 'Director' AS role
+        FROM IsDirector
+        UNION
+        SELECT person_id, movie_id, 'Writer' AS role
+        FROM IsWriter
+    ), person_roles AS (
+        SELECT all_roles.movie_id
+        FROM all_roles
+        WHERE person_id = '${person_id}'
+    ),
+     filtered_movies AS (
+        SELECT movie_id, primary_title, start_year
+        FROM Movies
+        WHERE movie_id IN (
+            SELECT ar.movie_id
+            FROM all_roles ar
+        )
+    ),
+     filtered_roles AS (
+         SELECT *
+        FROM all_roles ar
+        WHERE ar.movie_id IN (SELECT pr.movie_id FROM person_roles pr)
+    )
+    SELECT
+        p.person_id,
+        p.primary_name,
+        p.birth_year,
+        p.death_year,
+        GROUP_CONCAT(DISTINCT CONCAT(m.movie_id, ',', m.start_year, ',', m.primary_title) ORDER BY m.start_year DESC SEPARATOR ';') AS movies,
+        GROUP_CONCAT(DISTINCT fr.role SEPARATOR ', ') AS roles
+    FROM Persons p
+    JOIN filtered_roles fr ON fr.person_id = p.person_id
+    JOIN filtered_movies m ON fr.movie_id = m.movie_id
+    GROUP BY p.person_id
+    LIMIT 6;
+  `;
+
+  const responseHandler = (error, persons) => {
+    if (error) {
+      console.log(error);
+      res.json({ error });
+    } else if (persons) {
+      res.json({ persons });
+    }
+  };
+
+  if (person_id) {
+    connection.query(baseQuery, responseHandler);
+  } else {
+    res.json({ error: "person_id not provided" });
+  }
+}
+
+async function movie_rec(req, res) {
+  const { movie_id } = req.params;
+
+  const baseQuery = `
+    WITH imdb_ratings AS (
+      SELECT movie_id, rating_score AS imdb_score, num_votes AS imdb_votes
+      FROM Ratings r
+      WHERE agency_id = 1
+      GROUP BY movie_id
+    ),
+    tmdb_ratings AS (
+      SELECT movie_id, rating_score AS tmdb_score, num_votes AS tmdb_votes
+      FROM Ratings r
+      WHERE agency_id = 2
+      GROUP BY movie_id
+    ),
+    rt_ratings AS (
+      SELECT movie_id, rating_score AS rt_score, num_votes AS rt_votes
+      FROM Ratings r
+      WHERE agency_id = 3
+      GROUP BY movie_id
+    ),
+    movie_genre AS (
+      SELECT m.movie_id,
+      GROUP_CONCAT(DISTINCT g.genre_name) AS genres
+      FROM (SELECT * FROM Movies WHERE movie_id = '${movie_id}') m
+      LEFT JOIN HasGenre hg ON hg.movie_id = m.movie_id
+      LEFT JOIN Genres g on g.genre_id = hg.genre_id
+    ),
+    all_movie_genres AS (
+      SELECT m.movie_id,
+      GROUP_CONCAT(DISTINCT g.genre_name) AS genres
+      FROM Movies m
+      LEFT JOIN HasGenre hg ON hg.movie_id = m.movie_id
+      LEFT JOIN Genres g on g.genre_id = hg.genre_id
+      GROUP BY 1
+    )
+    SELECT m.movie_id, m.primary_title,
+    m.start_year, m.overview,
+    m.poster_path,
+    a.genres AS genres,
+    i.imdb_score, t.tmdb_score, r.rt_score AS rotten_tomatoes_score,
+    ((i.imdb_score + t.tmdb_score + (r.rt_score / 10)) / 3) AS average_score
+    FROM Movies m
+    LEFT JOIN imdb_ratings i ON m.movie_id = i.movie_id
+    LEFT JOIN tmdb_ratings t ON m.movie_id = t.movie_id
+    LEFT JOIN rt_ratings r ON m.movie_id = r.movie_id
+    LEFT JOIN all_movie_genres a ON m.movie_id = a.movie_id
+    WHERE genres LIKE (SELECT genres FROM movie_genre)
+    AND m.movie_id != '${movie_id}'
+    ORDER BY average_score DESC
+    LIMIT 6;
+  `;
+
+  const responseHandler = (error, results) => {
+    if (error || results?.length === 0) {
+      console.log(error);
+      res.json({ error });
+    } else if (results) {
+      res.json({ movies: results });
+    }
+  };
+
+  connection.query(baseQuery, responseHandler);
+}
+
+async function movie_person_rec(req, res) {
+  const { person_id } = req.params;
+
+  const baseQuery = `
+    WITH cast_filter AS (
+      SELECT DISTINCT(m.primary_title) AS movies,
+      c.movie_id,
+      m.start_year,
+      m.poster_path,
+      m.overview
+      FROM Persons p
+      LEFT JOIN IsCast c ON p.person_id = c.person_id
+      LEFT JOIN Movies m ON c.movie_id = m.movie_id
+      WHERE p.person_id LIKE '${person_id}'
+    ), directed_filter AS (
+      SELECT DISTINCT(m.primary_title) AS movies,
+      c.movie_id,
+      m.start_year,
+      m.poster_path,
+      m.overview
+      FROM Persons p
+      LEFT JOIN IsDirector c ON p.person_id = c.person_id
+      LEFT JOIN Movies m ON c.movie_id = m.movie_id
+      WHERE p.person_id LIKE '${person_id}'
+    ), written_filter AS (
+      SELECT DISTINCT(m.primary_title) AS movies,
+      c.movie_id,
+      m.start_year,
+      m.poster_path,
+      m.overview
+      FROM Persons p
+      LEFT JOIN IsWriter c ON p.person_id = c.person_id
+      LEFT JOIN Movies m ON c.movie_id = m.movie_id
+      WHERE p.person_id LIKE '${person_id}'
+    ), all_movies AS (
+      SELECT * FROM cast_filter WHERE movies IS NOT NULL
+      UNION
+      SELECT * FROM directed_filter WHERE movies IS NOT NULL
+      UNION
+      SELECT * FROM written_filter WHERE movies IS NOT NULL
+   ), imdb_ratings AS (
+      SELECT movie_id, rating_score AS imdb_score, num_votes AS imdb_votes
+      FROM Ratings r
+      WHERE agency_id = 1
+      GROUP BY movie_id
+    ), tmdb_ratings AS (
+      SELECT movie_id, rating_score AS tmdb_score, num_votes AS tmdb_votes
+      FROM Ratings r
+      WHERE agency_id = 2
+      GROUP BY movie_id
+    ), rt_ratings AS (
+      SELECT movie_id, rating_score AS rt_score, num_votes AS rt_votes
+      FROM Ratings r
+      WHERE agency_id = 3
+      GROUP BY movie_id
+    )
+    SELECT m.movie_id, m.movies AS primary_title, m.poster_path,
+    m.start_year, m.overview,
+    i.imdb_score, t.tmdb_score, r.rt_score AS rotten_tomatoes_score,
+    ((i.imdb_score + t.tmdb_score + (r.rt_score / 10)) / 3) AS average_score
+    FROM all_movies m
+    LEFT JOIN imdb_ratings i ON m.movie_id = i.movie_id
+    LEFT JOIN tmdb_ratings t ON m.movie_id = t.movie_id
+    LEFT JOIN rt_ratings r ON m.movie_id = r.movie_id
+    ORDER BY average_score DESC
+    LIMIT 6;
+  `;
+
+  const responseHandler = (error, results) => {
+    if (error || results?.length === 0) {
+      console.log(error);
+      res.json({ error });
+    } else if (results) {
+      res.json({ movies: results });
+    }
+  };
+
+  connection.query(baseQuery, responseHandler);
+}
+
 module.exports = {
   home,
   movies,
-  movie_rec,
-  movie_person_rec,
   movie,
   movie_cast,
   movie_director_and_writer,
   all_genres,
+  persons,
   person,
+  movie_rec,
+  movie_person_rec,
+  related_actors,
 };
